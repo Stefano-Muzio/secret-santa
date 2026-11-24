@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secret Santa 🎅</title>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+.card {
+    background: white;
+    max-width: 440px;
+    width: 100%;
+    padding: 35px 25px;
+    border-radius: 20px;
+    text-align: center;
+    box-shadow: 0 5px 25px #0002;
+}
+h1 { color: #b22222; }
+button {
+    background: #b22222;
+    color: white;
+    border: 0;
+    padding: 13px 25px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+}
+.result {
+    font-size: 30px;
+    font-weight: bold;
+    color: #228b22;
+    margin: 25px 0;
+    overflow-wrap: anywhere;
+}
+#error { color: #b22222; }
+</style>
+</head>
+<body>
+<div class="card">
+    <h1>🎅 Secret Santa 🎄</h1>
+    <p>Il tuo regalo di Natale va a...</p>
+    <button id="reveal">SCOPRI IL DESTINATARIO</button>
+    <div class="result" id="result"></div>
+    <p id="error"></p>
+    <p>🤫 Mi raccomando, non svelare il segreto!</p>
+</div>
+
+<script>
+const button = document.getElementById("reveal");
+
+function fromBase64(s) {
+    const binary = atob(s);
+    return Uint8Array.from(binary, c => c.charCodeAt(0));
+}
+
+button.addEventListener("click", async () => {
+    button.disabled = true;
+
+    try {
+        const token = location.hash.substring(1);
+
+        if (!token) {
+            throw new Error("Link non valido.");
+        }
+
+        const normalized = token.replace(/-/g, "+")
+                                 .replace(/_/g, "/");
+        const rawToken = fromBase64(
+            normalized + "=".repeat((4 - normalized.length % 4) % 4)
+        );
+
+        const digest = await crypto.subtle.digest(
+            "SHA-256", rawToken
+        );
+
+        const key = await crypto.subtle.importKey(
+            "raw", digest, "AES-GCM", false, ["decrypt"]
+        );
+
+        const response = await fetch("./data.json", {
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            throw new Error("Impossibile recuperare il sorteggio.");
+        }
+
+        const data = await response.json();
+        const record = data.records[token];
+
+        if (!record) {
+            throw new Error("Link non trovato.");
+        }
+
+        const plaintext = await crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: fromBase64(record.nonce)
+            },
+            key,
+            fromBase64(record.ciphertext)
+        );
+
+        const decoder = new TextDecoder();
+        const receiver = decoder.decode(plaintext);
+
+        document.getElementById("result").textContent = receiver;
+        button.textContent = "DESTINATARIO SCOPERTO 🎁";
+
+    } catch (error) {
+        document.getElementById("error").textContent =
+            "Non riesco a mostrare il risultato. Controlla il link.";
+        button.disabled = false;
+    }
+});
+</script>
+</body>
+</html>

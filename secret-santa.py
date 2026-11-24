@@ -1,96 +1,115 @@
+
 import tkinter as tk
 from tkinter import ttk, messagebox
+from pathlib import Path
 import random
 import secrets
+import json
+import base64
+import hashlib
 import html
-import os
-from pathlib import Path
+import webbrowser
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 class SecretSantaApp:
+
     def __init__(self, root):
         self.root = root
         self.root.title("🎅 Secret Santa")
-        self.root.geometry("720x720")
-
+        self.root.geometry("760x760")
         self.participants = []
         self.exclusions = []
 
         self.create_ui()
 
     def create_ui(self):
-        # --- Partecipanti ---
-        frame_people = ttk.LabelFrame(self.root, text="Partecipanti")
-        frame_people.pack(fill="x", padx=10, pady=10)
+        # Partecipanti
+        people = ttk.LabelFrame(self.root, text="Partecipanti")
+        people.pack(fill="x", padx=10, pady=8)
 
-        self.name_entry = ttk.Entry(frame_people)
-        self.name_entry.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        self.name_entry = ttk.Entry(people)
+        self.name_entry.pack(side="left", fill="x", expand=True,
+                             padx=5, pady=5)
         self.name_entry.bind("<Return>", lambda e: self.add_person())
 
-        ttk.Button(
-            frame_people, text="Aggiungi", command=self.add_person
-        ).pack(side="left", padx=5)
+        ttk.Button(people, text="Aggiungi",
+                   command=self.add_person).pack(side="left", padx=5)
 
-        self.people_list = tk.Listbox(frame_people, height=8)
+        self.people_list = tk.Listbox(people, height=7)
         self.people_list.pack(fill="x", padx=5, pady=5)
 
-        ttk.Button(
-            frame_people, text="Rimuovi selezionato",
-            command=self.remove_person
-        ).pack(pady=5)
+        ttk.Button(people, text="Rimuovi selezionato",
+                   command=self.remove_person).pack(pady=5)
 
-        # --- Esclusioni ---
-        frame_rules = ttk.LabelFrame(self.root, text="Coppie da evitare")
-        frame_rules.pack(fill="x", padx=10, pady=10)
+        # Esclusioni
+        rules = ttk.LabelFrame(self.root, text="Coppie da evitare")
+        rules.pack(fill="x", padx=10, pady=8)
 
-        ttk.Label(frame_rules, text="Chi NON regala a:").grid(
+        ttk.Label(rules, text="Chi NON regala a:").grid(
             row=0, column=0, padx=5, pady=5
         )
 
-        self.giver = ttk.Combobox(frame_rules, state="readonly")
-        self.giver.grid(row=0, column=1, padx=5, pady=5)
+        self.giver = ttk.Combobox(rules, state="readonly", width=18)
+        self.giver.grid(row=0, column=1, padx=5)
 
-        self.receiver = ttk.Combobox(frame_rules, state="readonly")
-        self.receiver.grid(row=0, column=2, padx=5, pady=5)
+        self.receiver = ttk.Combobox(rules, state="readonly", width=18)
+        self.receiver.grid(row=0, column=2, padx=5)
 
-        ttk.Button(
-            frame_rules, text="Aggiungi esclusione",
-            command=self.add_exclusion
-        ).grid(row=0, column=3, padx=5)
+        ttk.Button(rules, text="Aggiungi",
+                   command=self.add_exclusion).grid(
+                       row=0, column=3, padx=5
+                   )
 
-        self.rules_list = tk.Listbox(frame_rules, height=6)
+        self.rules_list = tk.Listbox(rules, height=5)
         self.rules_list.grid(row=1, column=0, columnspan=4,
-                            sticky="ew", padx=5, pady=5)
+                             sticky="ew", padx=5, pady=5)
 
-        ttk.Button(
-            frame_rules, text="Rimuovi esclusione selezionata",
-            command=self.remove_exclusion
-        ).grid(row=2, column=0, columnspan=4, pady=5)
+        ttk.Button(rules, text="Rimuovi esclusione",
+                   command=self.remove_exclusion).grid(
+                       row=2, column=0, columnspan=4, pady=5
+                   )
 
-        # --- Sorteggio ---
-        frame_draw = ttk.LabelFrame(self.root, text="Sorteggio")
-        frame_draw.pack(fill="x", padx=10, pady=10)
-
-        ttk.Button(
-            frame_draw, text="🎅 Esegui sorteggio e genera pagine",
-            command=self.draw
-        ).pack(fill="x", padx=10, pady=10)
-
-        # --- Messaggi ---
-        frame_output = ttk.LabelFrame(
-            self.root, text="Messaggi da condividere"
+        # GitHub Pages
+        hosting = ttk.LabelFrame(
+            self.root, text="Configurazione GitHub Pages"
         )
-        frame_output.pack(fill="both", expand=True, padx=10, pady=10)
+        hosting.pack(fill="x", padx=10, pady=8)
 
-        self.output = tk.Text(frame_output, height=12, wrap="word")
+        ttk.Label(hosting, text="Indirizzo del sito:").pack(
+            anchor="w", padx=5, pady=3
+        )
+
+        self.url_entry = ttk.Entry(hosting)
+        self.url_entry.pack(fill="x", padx=5, pady=5)
+        self.url_entry.insert(
+            0, "https://TUONOME.github.io/secret-santa/"
+        )
+
+        # Sorteggio
+        ttk.Button(
+            self.root,
+            text="🎅 ESEGUI SORTEGGIO E GENERA LINK",
+            command=self.draw
+        ).pack(fill="x", padx=10, pady=12)
+
+        # Output
+        output_frame = ttk.LabelFrame(
+            self.root, text="Link da condividere"
+        )
+        output_frame.pack(fill="both", expand=True, padx=10, pady=8)
+
+        self.output = tk.Text(output_frame, height=12, wrap="word")
         self.output.pack(fill="both", expand=True, padx=5, pady=5)
 
         ttk.Button(
-            frame_output, text="Copia tutto",
+            output_frame,
+            text="Copia tutti i messaggi",
             command=self.copy_output
         ).pack(pady=5)
 
-    # ---------------- PARTECIPANTI ----------------
+    # PARTECIPANTI
 
     def add_person(self):
         name = self.name_entry.get().strip()
@@ -98,7 +117,8 @@ class SecretSantaApp:
         if not name:
             return
 
-        if any(p.lower() == name.lower() for p in self.participants):
+        if any(p.lower() == name.lower()
+               for p in self.participants):
             messagebox.showwarning("Attenzione", "Nome già presente.")
             return
 
@@ -108,14 +128,12 @@ class SecretSantaApp:
 
     def remove_person(self):
         selection = self.people_list.curselection()
-
         if not selection:
             return
 
         name = self.people_list.get(selection[0])
         self.participants.remove(name)
 
-        # Rimuove le regole che coinvolgono la persona eliminata
         self.exclusions = [
             (a, b) for a, b in self.exclusions
             if a != name and b != name
@@ -123,7 +141,7 @@ class SecretSantaApp:
 
         self.refresh()
 
-    # ---------------- ESCLUSIONI ----------------
+    # ESCLUSIONI
 
     def add_exclusion(self):
         giver = self.giver.get()
@@ -134,33 +152,26 @@ class SecretSantaApp:
 
         if giver == receiver:
             messagebox.showwarning(
-                "Attenzione",
-                "Non puoi inserire la stessa persona in entrambi i campi."
+                "Attenzione", "Non puoi escludere una persona da sé stessa."
             )
             return
 
-        rule = (giver, receiver)
+        if (giver, receiver) not in self.exclusions:
+            self.exclusions.append((giver, receiver))
 
-        if rule in self.exclusions:
-            return
-
-        self.exclusions.append(rule)
         self.refresh()
 
     def remove_exclusion(self):
         selection = self.rules_list.curselection()
-
-        if not selection:
-            return
-
-        self.exclusions.pop(selection[0])
-        self.refresh()
+        if selection:
+            self.exclusions.pop(selection[0])
+            self.refresh()
 
     def refresh(self):
         self.people_list.delete(0, tk.END)
 
-        for person in self.participants:
-            self.people_list.insert(tk.END, person)
+        for p in self.participants:
+            self.people_list.insert(tk.END, p)
 
         self.giver["values"] = self.participants
         self.receiver["values"] = self.participants
@@ -168,22 +179,15 @@ class SecretSantaApp:
         self.rules_list.delete(0, tk.END)
 
         for a, b in self.exclusions:
-            self.rules_list.insert(tk.END, f"{a}  →  {b}")
+            self.rules_list.insert(tk.END, f"{a} → {b}")
 
-    # ---------------- ALGORITMO ----------------
+    # SORTEGGIO
 
     def generate_draw(self):
         people = self.participants[:]
-
-        if len(people) < 2:
-            raise ValueError("Servono almeno due partecipanti.")
-
         forbidden = set(self.exclusions)
-
-        # Nessuno può regalare a sé stesso
         forbidden.update((p, p) for p in people)
 
-        # Algoritmo di assegnazione casuale con backtracking
         givers = people[:]
         random.shuffle(givers)
 
@@ -196,8 +200,8 @@ class SecretSantaApp:
             giver = givers[index]
 
             candidates = [
-                r for r in available
-                if (giver, r) not in forbidden
+                p for p in available
+                if (giver, p) not in forbidden
             ]
 
             random.shuffle(candidates)
@@ -205,12 +209,14 @@ class SecretSantaApp:
             for receiver in candidates:
                 assignments[giver] = receiver
 
-                if solve(index + 1, [
+                remaining = [
                     p for p in available if p != receiver
-                ]):
+                ]
+
+                if solve(index + 1, remaining):
                     return True
 
-                assignments.pop(giver, None)
+                del assignments[giver]
 
             return False
 
@@ -219,112 +225,260 @@ class SecretSantaApp:
 
         return None
 
-    # ---------------- GENERAZIONE HTML ----------------
+    # CIFRATURA
 
-    def draw(self):
-        if len(self.participants) < 2:
-            messagebox.showwarning(
-                "Attenzione", "Inserisci almeno due partecipanti."
-            )
-            return
+    @staticmethod
+    def encode(data):
+        return base64.b64encode(data).decode("ascii")
 
-        try:
-            assignments = self.generate_draw()
-        except ValueError as e:
-            messagebox.showwarning("Attenzione", str(e))
-            return
+    def encrypt_assignment(self, receiver):
+        # Token casuale da 256 bit
+        token = secrets.token_urlsafe(32)
 
-        if assignments is None:
-            messagebox.showerror(
-                "Sorteggio impossibile",
-                "Non esiste un sorteggio che rispetti tutte le regole.\n"
-                "Prova a rimuovere qualche esclusione."
-            )
-            return
+        # La chiave deriva dal token, che non viene pubblicato
+        # nella pagina HTML né nel percorso richiesto al server.
+        raw_token = base64.urlsafe_b64decode(
+            token + "=" * (-len(token) % 4)
+        )
 
-        # Cartella di output
-        output_dir = Path.cwd() / "SecretSanta_output"
-        output_dir.mkdir(exist_ok=True)
+        key = hashlib.sha256(raw_token).digest()
 
-        # Genera una pagina individuale per ogni partecipante
-        links = {}
+        aes = AESGCM(key)
+        nonce = secrets.token_bytes(12)
 
-        for giver, receiver in assignments.items():
-            token = secrets.token_urlsafe(12)
-            filename = f"{token}.html"
-            filepath = output_dir / filename
+        ciphertext = aes.encrypt(
+            nonce,
+            receiver.encode("utf-8"),
+            None
+        )
 
-            links[giver] = filepath
+        return token, {
+            "nonce": self.encode(nonce),
+            "ciphertext": self.encode(ciphertext)
+        }
 
-            safe_receiver = html.escape(receiver)
+    # GENERAZIONE SITO
 
-            page = f"""<!DOCTYPE html>
+    def create_html(self):
+        return r"""<!DOCTYPE html>
 <html lang="it">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Secret Santa 🎅</title>
 <style>
-body {{
+body {
     font-family: Arial, sans-serif;
-    text-align: center;
-    padding: 50px 20px;
-    background: #f5f5f5;
-}}
-.card {{
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+.card {
     background: white;
-    max-width: 500px;
-    margin: auto;
-    padding: 40px 20px;
+    max-width: 440px;
+    width: 100%;
+    padding: 35px 25px;
     border-radius: 20px;
-    box-shadow: 0 4px 20px rgba(0,0,0,.1);
-}}
-h1 {{ color: #b22222; }}
-.name {{ font-size: 2em; color: #228b22; }}
+    text-align: center;
+    box-shadow: 0 5px 25px #0002;
+}
+h1 { color: #b22222; }
+button {
+    background: #b22222;
+    color: white;
+    border: 0;
+    padding: 13px 25px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+}
+.result {
+    font-size: 30px;
+    font-weight: bold;
+    color: #228b22;
+    margin: 25px 0;
+    overflow-wrap: anywhere;
+}
+#error { color: #b22222; }
 </style>
 </head>
 <body>
 <div class="card">
-<h1>🎅 Secret Santa 🎄</h1>
-<p>Quest'anno tu farai un regalo a:</p>
-<div class="name">{safe_receiver}</div>
-<p>Mi raccomando... non svelare il segreto! 🤫</p>
+    <h1>🎅 Secret Santa 🎄</h1>
+    <p>Il tuo regalo di Natale va a...</p>
+    <button id="reveal">SCOPRI IL DESTINATARIO</button>
+    <div class="result" id="result"></div>
+    <p id="error"></p>
+    <p>🤫 Mi raccomando, non svelare il segreto!</p>
 </div>
+
+<script>
+const button = document.getElementById("reveal");
+
+function fromBase64(s) {
+    const binary = atob(s);
+    return Uint8Array.from(binary, c => c.charCodeAt(0));
+}
+
+button.addEventListener("click", async () => {
+    button.disabled = true;
+
+    try {
+        const token = location.hash.substring(1);
+
+        if (!token) {
+            throw new Error("Link non valido.");
+        }
+
+        const normalized = token.replace(/-/g, "+")
+                                 .replace(/_/g, "/");
+        const rawToken = fromBase64(
+            normalized + "=".repeat((4 - normalized.length % 4) % 4)
+        );
+
+        const digest = await crypto.subtle.digest(
+            "SHA-256", rawToken
+        );
+
+        const key = await crypto.subtle.importKey(
+            "raw", digest, "AES-GCM", false, ["decrypt"]
+        );
+
+        const response = await fetch("./data.json", {
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            throw new Error("Impossibile recuperare il sorteggio.");
+        }
+
+        const data = await response.json();
+        const record = data.records[token];
+
+        if (!record) {
+            throw new Error("Link non trovato.");
+        }
+
+        const plaintext = await crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: fromBase64(record.nonce)
+            },
+            key,
+            fromBase64(record.ciphertext)
+        );
+
+        const decoder = new TextDecoder();
+        const receiver = decoder.decode(plaintext);
+
+        document.getElementById("result").textContent = receiver;
+        button.textContent = "DESTINATARIO SCOPERTO 🎁";
+
+    } catch (error) {
+        document.getElementById("error").textContent =
+            "Non riesco a mostrare il risultato. Controlla il link.";
+        button.disabled = false;
+    }
+});
+</script>
 </body>
 </html>
 """
 
-            filepath.write_text(page, encoding="utf-8")
+    def draw(self):
+        if len(self.participants) < 2:
+            messagebox.showwarning(
+                "Attenzione", "Servono almeno due partecipanti."
+            )
+            return
 
-        # Prepara messaggi
-        self.output.delete("1.0", tk.END)
+        base_url = self.url_entry.get().strip()
+
+        if not base_url.startswith("https://"):
+            messagebox.showwarning(
+                "Indirizzo non valido",
+                "Inserisci l'indirizzo HTTPS del tuo sito GitHub Pages."
+            )
+            return
+
+        if "TUONOME" in base_url or not base_url.endswith("/"):
+            messagebox.showwarning(
+                "Indirizzo da completare",
+                "Inserisci il tuo vero indirizzo GitHub Pages, "
+                "terminando con /"
+            )
+            return
+
+        assignments = self.generate_draw()
+
+        if assignments is None:
+            messagebox.showerror(
+                "Sorteggio impossibile",
+                "Non esiste un sorteggio che rispetti tutte le esclusioni."
+            )
+            return
+
+        # Cartella di pubblicazione
+        output_dir = Path.cwd() / "SecretSanta_output"
+        output_dir.mkdir(exist_ok=True)
+
+        records = {}
+        links = {}
+
+        for giver, receiver in assignments.items():
+            token, encrypted = self.encrypt_assignment(receiver)
+
+            records[token] = encrypted
+            links[giver] = base_url + "#" + token
+
+        # Archivio cifrato
+        data = {"records": records}
+
+        (output_dir / "data.json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+
+        # Pagina web
+        (output_dir / "index.html").write_text(
+            self.create_html(),
+            encoding="utf-8"
+        )
+
+        # Messaggi
+        messages = []
 
         for giver in self.participants:
-            link = links[giver].as_uri()
-
-            message = (
+            messages.append(
                 f"Ciao {giver}! 🎅\n"
-                f"Scopri chi devi regalare:\n{link}\n\n"
+                f"Il tuo Secret Santa è pronto!\n"
+                f"Apri questo link per scoprire chi devi regalare:\n"
+                f"{links[giver]}\n"
             )
 
-            self.output.insert(tk.END, message)
+        messages_text = "\n--------------------\n\n".join(messages)
 
-        self.output.insert(
-            tk.END,
-            "\nPagine HTML generate nella cartella:\n"
-            f"{output_dir}\n\n"
-            "ATTENZIONE: questi sono link locali sul tuo computer.\n"
-            "Per renderli accessibili agli amici via Internet, "
-            "serve pubblicarli su un hosting."
+        (output_dir / "messaggi.txt").write_text(
+            messages_text,
+            encoding="utf-8"
         )
+
+        self.output.delete("1.0", tk.END)
+        self.output.insert(tk.END, messages_text)
 
         messagebox.showinfo(
-            "Sorteggio completato",
-            "Sorteggio eseguito!\n\n"
-            f"Le pagine sono state create in:\n{output_dir}"
+            "Sorteggio completato!",
+            "Estrazione completata!\n\n"
+            "File generati in:\n"
+            f"{output_dir}\n\n"
+            "Ora devi caricare index.html e data.json "
+            "nel repository GitHub."
         )
-
-    # ---------------- COPIA ----------------
 
     def copy_output(self):
         text = self.output.get("1.0", tk.END).strip()
@@ -335,9 +489,7 @@ h1 {{ color: #b22222; }}
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
 
-        messagebox.showinfo(
-            "Copiato", "Testo copiato negli appunti!"
-        )
+        messagebox.showinfo("Copiato", "Messaggi copiati!")
 
 
 if __name__ == "__main__":
